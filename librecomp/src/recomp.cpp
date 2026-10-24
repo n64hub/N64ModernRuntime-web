@@ -36,6 +36,7 @@
 #    include <fcntl.h>
 #    include <sys/stat.h>
 #    include <unistd.h>
+#    include <emscripten.h>
 #endif
 
 #if defined(_WIN32)
@@ -817,6 +818,11 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
 
                 save_type = game_entry.save_type;
                 ultramodern::init_saving(rdram);
+
+#ifdef __EMSCRIPTEN__
+                // Tells the page its game is running, past the launcher: the shell's on-screen controller shows from here.
+                MAIN_THREAD_ASYNC_EM_ASM({ if (Module.gameStarted) Module.gameStarted(); });
+#endif
 
                 try {
                     game_entry.entrypoint(rdram, context);
