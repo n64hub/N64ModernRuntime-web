@@ -114,6 +114,14 @@ namespace ultramodern {
 
         void set_callbacks(const callbacks_t& callbacks);
 
+        // Tells the game the RDP has finished the graphics task the renderer is being sent (RendererContext::send_dl)
+        // before send_dl returns, once the renderer reads nothing more of RDRAM for it, so the game goes on while the
+        // renderer finishes its own work for the task. Only from inside send_dl, on the graphics thread: the DP's message
+        // is then not sent again when send_dl returns.
+        void rdp_done();
+        // Whether rdp_done sent the DP's message of the task send_dl was given, which it then forgets.
+        bool take_rdp_done();
+
         std::unique_ptr<RendererContext> create_render_context(uint8_t* rdram, WindowHandle window_handle, bool developer_mode);
 
         std::string get_graphics_api_name(GraphicsApi api);

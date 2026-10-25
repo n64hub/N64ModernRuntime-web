@@ -10,6 +10,22 @@ void ultramodern::renderer::set_callbacks(const callbacks_t& callbacks) {
     render_callbacks = callbacks;
 }
 
+void dp_complete();
+
+// Whether rdp_done sent the DP's message of the graphics task send_dl was given. Only the graphics thread touches it.
+static bool rdp_done_sent = false;
+
+void ultramodern::renderer::rdp_done() {
+    dp_complete();
+    rdp_done_sent = true;
+}
+
+bool ultramodern::renderer::take_rdp_done() {
+    const bool sent = rdp_done_sent;
+    rdp_done_sent = false;
+    return sent;
+}
+
 
 std::unique_ptr<ultramodern::renderer::RendererContext> ultramodern::renderer::create_render_context(uint8_t* rdram, WindowHandle window_handle, bool developer_mode) {
     if (render_callbacks.create_render_context == nullptr) {

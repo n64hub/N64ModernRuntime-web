@@ -414,6 +414,11 @@ void sp_complete() {
 }
 
 void dp_complete() {
+    // Sent already if the renderer sent it before send_dl returned (ultramodern::renderer::rdp_done).
+    if (ultramodern::renderer::take_rdp_done()) {
+        return;
+    }
+
     uint8_t* rdram = events_context.rdram;
     std::lock_guard lock{ events_context.message_mutex };
     ultramodern::enqueue_external_message_src(events_context.dp.mq, events_context.dp.msg, false, ultramodern::EventMessageSource::Dp);
