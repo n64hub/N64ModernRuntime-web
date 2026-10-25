@@ -1,6 +1,7 @@
 #include <thread>
 #include <variant>
 #include <set>
+#include <unordered_map>
 #include "blockingconcurrentqueue.h"
 
 #include "ultramodern/ultra64.h"
@@ -102,6 +103,73 @@ void timer_thread(RDRAM_ARG1) {
     ultramodern::set_native_thread_name("Timer Thread");
     ultramodern::set_native_thread_priority(ultramodern::ThreadPriority::VeryHigh);
 
+#if defined(__EMSCRIPTEN__)
+    // The active timers ordered by a copy of each one's timestamp, taken as it is added, not by the timestamp in the
+    // OSTimer: osSetTimer writes that on the game's thread as it is called, and a game that restarts a timer still
+    // pending (osStopTimer, then osSetTimer, as Banjo-Tooie's scheduler does at each retrace with two timers) moved it
+    // inside the set below while it was there. Out of order, the set's erase missed it, so the timer stayed first and
+    // fired at every pass with no wait, its messages held for a full queue (ULTRAMODERN_HOLD_BLOCKED_MESSAGES) faster
+    // than the game took them: the game thread receiving them never blocked again, the threads below it never ran, and
+    // the held messages took the heap at about 13 MB a second to Aborted(OOM). A timer is still pending at its restart
+    // only where this thread runs late, which on a phone's slow cores it does at a level change.
+    std::set<std::pair<OSTime, PTR(OSTimer)>> active_timers{};
+    std::unordered_map<PTR(OSTimer), OSTime> active_keys{};
+
+    // Adds a timer at that timestamp, in place of where it was if it is active already.
+    auto add_timer = [&](PTR(OSTimer) timer_, OSTime timestamp) {
+        auto found = active_keys.find(timer_);
+        if (found != active_keys.end()) {
+            active_timers.erase({ found->second, timer_ });
+        }
+        active_timers.insert({ timestamp, timer_ });
+        active_keys[timer_] = timestamp;
+    };
+
+    auto remove_timer = [&](PTR(OSTimer) timer_) {
+        auto found = active_keys.find(timer_);
+        if (found != active_keys.end()) {
+            active_timers.erase({ found->second, timer_ });
+            active_keys.erase(found);
+        }
+    };
+
+    auto process_timer_action = [&](const Action& action) {
+        if (const auto* add_action = std::get_if<AddTimerAction>(&action)) {
+            add_timer(add_action->timer, TO_PTR(OSTimer, add_action->timer)->timestamp);
+        } else if (const auto* remove_action = std::get_if<RemoveTimerAction>(&action)) {
+            remove_timer(remove_action->timer);
+        }
+    };
+
+    while (true) {
+        Action cur_action;
+        while (timer_context.action_queue.try_dequeue(cur_action)) {
+            process_timer_action(cur_action);
+        }
+
+        while (active_timers.empty()) {
+            timer_context.action_queue.wait_dequeue(cur_action);
+            process_timer_action(cur_action);
+        }
+
+        const auto [timestamp, cur_timer_] = *active_timers.begin();
+        OSTimer* cur_timer = TO_PTR(OSTimer, cur_timer_);
+        remove_timer(cur_timer_);
+
+        auto wait_duration = ticks_to_timepoint(timestamp) - std::chrono::high_resolution_clock::now();
+        if (wait_duration.count() >= 0 && timer_context.action_queue.wait_dequeue_timed(cur_action, wait_duration)) {
+            add_timer(cur_timer_, timestamp);
+            process_timer_action(cur_action);
+        }
+        else {
+            ultramodern::enqueue_external_message_src(cur_timer->mq, cur_timer->msg, false, ultramodern::EventMessageSource::Timer);
+            if (cur_timer->interval != 0) {
+                cur_timer->timestamp = cur_timer->interval + time_now();
+                add_timer(cur_timer_, cur_timer->timestamp);
+            }
+        }
+    }
+#else
     // Lambda comparator function to keep the set ordered
     auto timer_sort = [PASS_RDRAM1](PTR(OSTimer) a_, PTR(OSTimer) b_) {
         OSTimer* a = TO_PTR(OSTimer, a_);
@@ -170,6 +238,7 @@ void timer_thread(RDRAM_ARG1) {
             }
         }
     }
+#endif
 }
 
 void ultramodern::init_timers(RDRAM_ARG1) {
