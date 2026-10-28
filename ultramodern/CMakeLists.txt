@@ -61,6 +61,13 @@ if (ULTRAMODERN_RSP_TASKS_COPIED OR EMSCRIPTEN)
     target_compile_definitions(ultramodern PRIVATE ULTRAMODERN_RSP_TASKS_COPIED=1)
 endif()
 
+# The VI thread queues a VI's screen update after it swaps in the framebuffer the game gave it, not before
+# (src/events.cpp, vi_thread_func).
+option(ULTRAMODERN_SCREEN_UPDATE_AFTER_VI "A VI's screen update queued after its framebuffer swap (always on with Emscripten)" OFF)
+if (ULTRAMODERN_SCREEN_UPDATE_AFTER_VI OR EMSCRIPTEN)
+    target_compile_definitions(ultramodern PRIVATE ULTRAMODERN_SCREEN_UPDATE_AFTER_VI=1)
+endif()
+
 # A load from ROM onto display list commands the renderer may not have read yet waits until it has (src/displaylists.cpp).
 target_sources(ultramodern PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/displaylists.cpp")
 option(ULTRAMODERN_LOADS_WAIT_FOR_DISPLAY_LISTS "A load from ROM onto display list commands the renderer may not have read yet waits for it (always on with Emscripten)" OFF)

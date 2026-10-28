@@ -397,12 +397,20 @@ void vi_thread_func() {
             events_context.action_queue.enqueue(DummyWorkloadAction{events_context.vi.get_next_state()->framebuffer});
         }
 
+#if ULTRAMODERN_SCREEN_UPDATE_AFTER_VI
+        // The screen update shows the framebuffer this VI swaps in, queued right behind the workloads that drew it and
+        // before the next frame's. Queued before the swap, it showed the one swapped in at the VI before: a VI late, after
+        // the next frame's first workloads, where RT64_GAME_FRAME_WORKLOADS ends a game frame at its framebuffer's present.
+        events_context.vi.update_vi();
+        events_context.action_queue.enqueue(ScreenUpdateAction{ events_context.vi.regs });
+#else
         // Queue a screen update for the graphics thread with the current VI register state.
         // Doing this before the VI update is equivalent to updating the screen after the previous frame's scanout finished.
         events_context.action_queue.enqueue(ScreenUpdateAction{ events_context.vi.regs });
 
         // Update VI registers and swap VI modes.
         events_context.vi.update_vi();
+#endif
 
         // If the game has started, handle sending VI and AI events.
         if (ultramodern::is_game_started()) {
