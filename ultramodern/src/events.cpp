@@ -54,6 +54,24 @@ struct ViState {
 #define VI_STATE_BLACK 0x20
 #define VI_STATE_REPEATLINE 0x40
 
+// The graphics thread's actions, taken in the order they were queued, whichever thread queued them. A moodycamel queue
+// keeps one thread's order only: each thread queues into a list of its own, and a dequeue takes from the list that
+// holds the most. The VI thread queues its ScreenUpdateAction for the framebuffer it showed before it moves on to the
+// next one, and a game then draws its next frame into that framebuffer: its graphics task could run first, and the
+// screen showed the framebuffer with the next frame's first lists drawn into it (Mario Party 1's flash of a new scene
+// before its star wipe opens, 9 presents in 12,225 on a busy host). Every thread queues through one producer token.
+struct ActionQueue : moodycamel::BlockingConcurrentQueue<Action> {
+    moodycamel::ProducerToken token{ *this };
+    std::mutex mutex;
+
+    ActionQueue() {}
+
+    bool enqueue(Action action) {
+        std::lock_guard lock{ mutex };
+        return BlockingConcurrentQueue::enqueue(token, std::move(action));
+    }
+};
+
 static struct {
     struct {
         std::thread thread;
@@ -137,7 +155,7 @@ static struct {
     // The same message queue may be used for multiple events, so share a mutex for all of them
     std::mutex message_mutex;
     uint8_t* rdram;
-    moodycamel::BlockingConcurrentQueue<Action> action_queue{};
+    ActionQueue action_queue{};
     moodycamel::BlockingConcurrentQueue<OSTask*> sp_task_queue{};
     moodycamel::ConcurrentQueue<OSThread*> deleted_threads{};
 } events_context{};
