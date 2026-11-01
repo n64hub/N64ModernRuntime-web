@@ -94,13 +94,8 @@ extern "C" void osFlashSectorErase_recomp(uint8_t * rdram, recomp_context * ctx)
         ULTRAMODERN_QUICK_EXIT();
     }
 
-    uint32_t page_num = (uint32_t)ctx->r4;
-
-    // Prevent out of bounds erase
-    if (page_num >= page_count) {
-        ctx->r2 = -1;
-        return;
-    }
+    // The chip's page number wraps at its page count, as on a console.
+    uint32_t page_num = (uint32_t)ctx->r4 % page_count;
 
     save_clear(page_num * page_size, page_size, 0xFF);
 
@@ -114,13 +109,8 @@ extern "C" void osFlashSectorEraseThrough_recomp(uint8_t * rdram, recomp_context
         ULTRAMODERN_QUICK_EXIT();
     }
 
-    uint32_t page_num = (uint32_t)ctx->r4;
-
-    // Prevent out of bounds erase
-    if (page_num >= page_count) {
-        ctx->r2 = -1;
-        return;
-    }
+    // The chip's page number wraps at its page count, as on a console.
+    uint32_t page_num = (uint32_t)ctx->r4 % page_count;
 
     save_clear(page_num * page_size, page_size, 0xFF);
 
@@ -167,8 +157,8 @@ extern "C" void osFlashWriteArray_recomp(uint8_t * rdram, recomp_context * ctx) 
 
     uint32_t page_num = ctx->r4;
 
-    // Copy the write buffer into the save file
-    save_write_ptr(write_buffer.data(), page_num * page_size, page_size);
+    // Copy the write buffer into the save file. The chip's page number wraps at its page count, as on a console.
+    save_write_ptr(write_buffer.data(), (page_num % page_count) * page_size, page_size);
 
     ctx->r2 = 0;
 }
@@ -186,11 +176,12 @@ extern "C" void osFlashReadArray_recomp(uint8_t * rdram, recomp_context * ctx) {
     uint32_t n_pages = MEM_W(0x10, ctx->r29);
     PTR(OSMesgQueue) mq = MEM_W(0x14, ctx->r29);
 
-    uint32_t offset = page_num * page_size;
-    uint32_t count = n_pages * page_size;
-
-    // Read from the save file into the provided buffer
-    save_read(PASS_RDRAM dramAddr, offset, count);
+    // Read from the save file into the provided buffer, a page at a time: the chip's page number wraps at its page
+    // count, so a page outside it (Paper Mario's file menu reads page -128 for a file with no save yet) reads one
+    // inside it, as on a console, where the game then finds its checksum wrong, and never memory past the save.
+    for (uint32_t i = 0; i < n_pages; i++) {
+        save_read(PASS_RDRAM dramAddr + i * page_size, ((page_num + i) % page_count) * page_size, page_size);
+    }
 
     // Send the message indicating read completion
     ultramodern::enqueue_external_message_src(mq, 0, false, ultramodern::EventMessageSource::Pi);
