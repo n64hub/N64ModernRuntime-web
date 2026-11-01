@@ -198,8 +198,9 @@ extern "C" void load_overlays(uint32_t rom, int32_t ram_addr, uint32_t size) {
             return addr < entry.size + entry.rom_addr;
         }
     );
-    // Load the overlays that were found
-    for (auto it = lower; it != upper; ++it) {
+    // Load the overlays that were found. A range inside one section (a game reading an overlay in pieces) has no
+    // section wholly in it and puts upper before lower, so the loop ends at upper or past it.
+    for (auto it = lower; it < upper; ++it) {
         load_overlay(std::distance(&sections_info.code_sections[0], it), it->rom_addr - rom + ram_addr);
     }
 }
