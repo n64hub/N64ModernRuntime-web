@@ -335,6 +335,31 @@ namespace {
 }
 #endif
 
+#if ULTRAMODERN_VIS_WAIT_FOR_RENDERER
+// The game's VI and AI messages wait while the graphics thread has spent more than a few VIs on one action. The thread
+// tells the game its RSP task is done before the renderer reads the list (gfx_thread_func), and a console's RSP has read
+// it a few ms later, so a game can step its logic every VI whatever its lists do: Paper Mario's runs before it checks
+// how many tasks are pending, which holds back only its drawing. On a page the renderer's thread can stop for seconds
+// in one list, waiting for a readback while the browser builds pipelines (Firefox builds them in line with the device,
+// 4-10 s for a section of the prebuilt shader list). Paper Mario's attract demo went on to its next map in that time, and
+// the list the renderer was still reading pointed at what the map's load had put there since: a function pointer read
+// 0x00010001 and the page trapped, or it trapped in malloc, or it stopped drawing. Held, the game sees the stall as a
+// console would never show it, one long VI.
+namespace {
+    // When the action the graphics thread is on started, in steady_clock ticks (odd, never 0), or 0 between actions.
+    std::atomic<int64_t> renderer_action_start{ 0 };
+
+    // Six VIs: a list or screen update takes a few ms, and on a phone 10-90 ms at the first list of a new screen.
+    constexpr std::chrono::milliseconds renderer_stall_limit{ 100 };
+
+    bool renderer_stalled() {
+        const int64_t start = renderer_action_start.load();
+        return (start != 0) && ((std::chrono::steady_clock::now().time_since_epoch().count() - start) >
+            std::chrono::duration_cast<std::chrono::steady_clock::duration>(renderer_stall_limit).count());
+    }
+}
+#endif
+
 extern moodycamel::LightweightSemaphore graphics_shutdown_ready;
 
 void set_dummy_vi(bool odd);
@@ -413,7 +438,11 @@ void vi_thread_func() {
 #endif
 
         // If the game has started, handle sending VI and AI events.
+#if ULTRAMODERN_VIS_WAIT_FOR_RENDERER
+        if (ultramodern::is_game_started() && !renderer_stalled()) {
+#else
         if (ultramodern::is_game_started()) {
+#endif
             remaining_retraces--;
             
             std::lock_guard lock{ events_context.message_mutex };
@@ -545,6 +574,9 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
         // Try to pull an action from the queue
         Action action;
         if (events_context.action_queue.wait_dequeue_timed(action, 1ms)) {
+#if ULTRAMODERN_VIS_WAIT_FOR_RENDERER
+            renderer_action_start = std::chrono::steady_clock::now().time_since_epoch().count() | 1;
+#endif
             // Determine the action type and act on it
             if (const auto* task_action = std::get_if<SpTaskAction>(&action)) {
                 // Tell the game that the RSP completed instantly. This will allow it to queue other task types, but it won't
@@ -583,6 +615,9 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
             else if (const auto* dummy_workload_action = std::get_if<DummyWorkloadAction>(&action)) {
                 renderer_context->send_dummy_workload(dummy_workload_action->fb_address);
             }
+#if ULTRAMODERN_VIS_WAIT_FOR_RENDERER
+            renderer_action_start = 0;
+#endif
         }
     }
 
