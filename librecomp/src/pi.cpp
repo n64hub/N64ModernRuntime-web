@@ -162,24 +162,29 @@ void saving_thread_func(RDRAM_ARG1) {
     }
 }
 
-void save_write_ptr(const void* in, uint32_t offset, uint32_t count) {
-    assert(offset + count <= save_context.save_buffer.size());
+// A save's address wraps at its size, as the chip's does: every save type's size is a power of two, so an address past
+// it (Paper Mario's file menu reads Flash page -128 for a file with no save yet) reaches the save inside it, which the
+// game then finds empty or wrong, never memory past save_buffer. A count that runs off its end wraps the same way.
+static size_t save_index(uint32_t offset) {
+    return offset & (save_context.save_buffer.size() - 1);
+}
 
+void save_write_ptr(const void* in, uint32_t offset, uint32_t count) {
     {
         std::lock_guard lock { save_context.save_buffer_mutex };
-        memcpy(&save_context.save_buffer[offset], in, count);
+        for (uint32_t i = 0; i < count; i++) {
+            save_context.save_buffer[save_index(offset + i)] = static_cast<const char*>(in)[i];
+        }
     }
     
     save_context.write_sempahore.signal();
 }
 
 void save_write(RDRAM_ARG PTR(void) rdram_address, uint32_t offset, uint32_t count) {
-    assert(offset + count <= save_context.save_buffer.size());
-
     {
         std::lock_guard lock { save_context.save_buffer_mutex };
         for (gpr i = 0; i < count; i++) {
-            save_context.save_buffer[offset + i] = MEM_B(i, rdram_address);
+            save_context.save_buffer[save_index(offset + i)] = MEM_B(i, rdram_address);
         }
     }
 
@@ -187,20 +192,18 @@ void save_write(RDRAM_ARG PTR(void) rdram_address, uint32_t offset, uint32_t cou
 }
 
 void save_read(RDRAM_ARG PTR(void) rdram_address, uint32_t offset, uint32_t count) {
-    assert(offset + count <= save_context.save_buffer.size());
-
     std::lock_guard lock { save_context.save_buffer_mutex };
     for (gpr i = 0; i < count; i++) {
-        MEM_B(i, rdram_address) = save_context.save_buffer[offset + i];
+        MEM_B(i, rdram_address) = save_context.save_buffer[save_index(offset + i)];
     }
 }
 
 void save_clear(uint32_t start, uint32_t size, char value) {
-    assert(start + size < save_context.save_buffer.size());
-
     {
         std::lock_guard lock { save_context.save_buffer_mutex };
-        std::fill_n(save_context.save_buffer.begin() + start, size, value);
+        for (uint32_t i = 0; i < size; i++) {
+            save_context.save_buffer[save_index(start + i)] = value;
+        }
     }
 
     save_context.write_sempahore.signal();
