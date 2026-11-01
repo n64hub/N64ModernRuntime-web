@@ -75,9 +75,9 @@ if (ULTRAMODERN_SCREEN_UPDATE_AFTER_VI OR EMSCRIPTEN)
     target_compile_definitions(ultramodern PRIVATE ULTRAMODERN_SCREEN_UPDATE_AFTER_VI=1)
 endif()
 
-# The game's VI and AI messages wait while the graphics thread has spent over 100 ms on one action, so a game can't step
-# its logic past a list the renderer is still reading (src/events.cpp, renderer_stalled).
-option(ULTRAMODERN_VIS_WAIT_FOR_RENDERER "The game's VIs wait while the renderer is stalled in one action (always on with Emscripten)" OFF)
+# No VI comes while the graphics thread has spent over 100 ms on one action, so a game can't step its logic past a list
+# the renderer is still reading (src/events.cpp, renderer_stalled).
+option(ULTRAMODERN_VIS_WAIT_FOR_RENDERER "No VI while the renderer is stalled in one action (always on with Emscripten)" OFF)
 if (ULTRAMODERN_VIS_WAIT_FOR_RENDERER OR EMSCRIPTEN)
     target_compile_definitions(ultramodern PRIVATE ULTRAMODERN_VIS_WAIT_FOR_RENDERER=1)
 endif()

@@ -336,26 +336,40 @@ namespace {
 #endif
 
 #if ULTRAMODERN_VIS_WAIT_FOR_RENDERER
-// The game's VI and AI messages wait while the graphics thread has spent more than a few VIs on one action. The thread
-// tells the game its RSP task is done before the renderer reads the list (gfx_thread_func), and a console's RSP has read
-// it a few ms later, so a game can step its logic every VI whatever its lists do: Paper Mario's runs before it checks
-// how many tasks are pending, which holds back only its drawing. On a page the renderer's thread can stop for seconds
-// in one list, waiting for a readback while the browser builds pipelines (Firefox builds them in line with the device,
-// 4-10 s for a section of the prebuilt shader list). Paper Mario's attract demo went on to its next map in that time, and
-// the list the renderer was still reading pointed at what the map's load had put there since: a function pointer read
+// The VI thread sends no VI while the graphics thread has spent more than a few VIs on one action. The thread tells the
+// game its RSP task is done before the renderer reads the list (gfx_thread_func), and a console's RSP has read it a few
+// ms later, so a game can step its logic every VI whatever its lists do: Paper Mario's runs before it checks how many
+// tasks are pending, which holds back only its drawing. On a page the renderer's thread can stop for seconds in one
+// list, waiting for a readback while the browser builds pipelines (Firefox builds them in line with the device, 4-10 s
+// for a section of the prebuilt shader list). Paper Mario's attract demo went on to its next map in that time, and the
+// list the renderer was still reading pointed at what the map's load had put there since: a function pointer read
 // 0x00010001 and the page trapped, or it trapped in malloc, or it stopped drawing. Held, the game sees the stall as a
 // console would never show it, one long VI.
+// Both sides touch only lines a game fork's own patches to this file leave alone (DKR-R-web's rewrite the VI messages'
+// block and the graphics thread's actions).
 namespace {
-    // When the action the graphics thread is on started, in steady_clock ticks (odd, never 0), or 0 between actions.
-    std::atomic<int64_t> renderer_action_start{ 0 };
+    // The graphics thread's turns of its loop: waiting for an action, it comes round every 1 ms (a timed wait's tick in
+    // Firefox, 15.6 ms). A count, not a time: a time read on one thread and one read on another don't agree on a page
+    // in Firefox (each worker's own performance.timeOrigin), so only the VI thread's own clock times it.
+    std::atomic<uint32_t> renderer_loop_turns{ 0 };
 
     // Six VIs: a list or screen update takes a few ms, and on a phone 10-90 ms at the first list of a new screen.
     constexpr std::chrono::milliseconds renderer_stall_limit{ 100 };
 
+    // Whether the graphics thread has made no turn for renderer_stall_limit, as the VI thread (its only caller) has seen.
+    // None before its loop's first turn.
     bool renderer_stalled() {
-        const int64_t start = renderer_action_start.load();
-        return (start != 0) && ((std::chrono::steady_clock::now().time_since_epoch().count() - start) >
-            std::chrono::duration_cast<std::chrono::steady_clock::duration>(renderer_stall_limit).count());
+        static uint32_t seen_turns = 0;
+        static std::chrono::steady_clock::time_point seen_time{};
+        const uint32_t turns = renderer_loop_turns.load();
+        const auto now = std::chrono::steady_clock::now();
+        if ((turns == 0) || (turns != seen_turns)) {
+            seen_turns = turns;
+            seen_time = now;
+            return false;
+        }
+
+        return (now - seen_time) > renderer_stall_limit;
     }
 }
 #endif
@@ -389,6 +403,12 @@ void vi_thread_func() {
             // printf("Skipping the next VI wait\n");
             next = std::chrono::high_resolution_clock::now();
         }
+#if ULTRAMODERN_VIS_WAIT_FOR_RENDERER
+        // No VI while the graphics thread is stalled in one action (renderer_stalled()); the next comes once it isn't.
+        while (renderer_stalled() && !exited) {
+            std::this_thread::sleep_for(1ms);
+        }
+#endif
 #if defined(__EMSCRIPTEN_PTHREADS__)
         // A VI that ended on a frame leaves the timed wait below nothing to wait for. That wait stays where it was, so
         // a recomp's own patches to this loop still apply.
@@ -438,11 +458,7 @@ void vi_thread_func() {
 #endif
 
         // If the game has started, handle sending VI and AI events.
-#if ULTRAMODERN_VIS_WAIT_FOR_RENDERER
-        if (ultramodern::is_game_started() && !renderer_stalled()) {
-#else
         if (ultramodern::is_game_started()) {
-#endif
             remaining_retraces--;
             
             std::lock_guard lock{ events_context.message_mutex };
@@ -573,10 +589,10 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
     while (!exited) {
         // Try to pull an action from the queue
         Action action;
-        if (events_context.action_queue.wait_dequeue_timed(action, 1ms)) {
 #if ULTRAMODERN_VIS_WAIT_FOR_RENDERER
-            renderer_action_start = std::chrono::steady_clock::now().time_since_epoch().count() | 1;
+        renderer_loop_turns++;
 #endif
+        if (events_context.action_queue.wait_dequeue_timed(action, 1ms)) {
             // Determine the action type and act on it
             if (const auto* task_action = std::get_if<SpTaskAction>(&action)) {
                 // Tell the game that the RSP completed instantly. This will allow it to queue other task types, but it won't
@@ -615,9 +631,6 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
             else if (const auto* dummy_workload_action = std::get_if<DummyWorkloadAction>(&action)) {
                 renderer_context->send_dummy_workload(dummy_workload_action->fb_address);
             }
-#if ULTRAMODERN_VIS_WAIT_FOR_RENDERER
-            renderer_action_start = 0;
-#endif
         }
     }
 
