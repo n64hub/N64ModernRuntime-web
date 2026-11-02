@@ -2570,10 +2570,14 @@ recomp::mods::CodeModLoadError recomp::mods::ModContext::load_mod_code(uint8_t* 
 
     // Code recompiled ahead of time and linked in (register_precompiled_mod).
     if (mod.precompiled_code != nullptr) {
+#if !defined(IS_WASM)
         // Hooks can't be added to it either.
         if (!entry_func_hooks.empty() || !return_func_hooks.empty()) {
             return CodeModLoadError::OfflineModHooked;
         }
+#endif
+        // In WebAssembly a replacement is a redirect, and the hooks on the function it replaces run around it
+        // (resolve_code_dependencies), as the live recompiler would add them to its code.
 
         mod.code_handle = std::make_unique<PrecompiledCodeHandle>(*mod.precompiled_code, *mod.recompiler_context, handle_inputs);
         if (!mod.code_handle->good()) {
@@ -2852,6 +2856,19 @@ recomp::mods::CodeModLoadError recomp::mods::ModContext::resolve_code_dependenci
 
         // Patch the function to redirect it to the replacement.
         patch_func(to_replace, mod.code_handle->get_function_handle(replacement.func_index));
+#if defined(IS_WASM)
+        // The hooks on the function it replaces run around the replacement (load_mod_code): another mod's, or this one's
+        // own (a mod may hook a function it replaces itself).
+        Redirect& redirect = add_redirect(to_replace);
+        auto find_entry_it = hook_slots.find(HookDefinition{ replacement.original_section_vrom, replacement.original_vram, false });
+        if (find_entry_it != hook_slots.end()) {
+            redirect.entry_hook = find_entry_it->second;
+        }
+        auto find_return_it = hook_slots.find(HookDefinition{ replacement.original_section_vrom, replacement.original_vram, true });
+        if (find_return_it != hook_slots.end()) {
+            redirect.return_hook = find_return_it->second;
+        }
+#endif
     }
 
     return CodeModLoadError::Good;
