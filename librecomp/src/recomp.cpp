@@ -1007,12 +1007,13 @@ void recomp::start(const recomp::Configuration& cfg) {
     uint8_t* rdram;
     bool alloc_failed;
 #ifdef _WIN32
-    rdram = reinterpret_cast<uint8_t*>(VirtualAlloc(nullptr, allocation_size, MEM_COMMIT | MEM_RESERVE, PAGE_NOACCESS));
-    DWORD old_protect = 0;
+    // Reserve the whole range and commit only the memory size: committed pages count against Windows' commit limit
+    // even when they can't be accessed, and reserved ones fault on access just the same.
+    rdram = reinterpret_cast<uint8_t*>(VirtualAlloc(nullptr, allocation_size, MEM_RESERVE, PAGE_NOACCESS));
     alloc_failed = (rdram == nullptr);
     if (!alloc_failed) {
-        // VirtualProtect returns 0 on failure.
-        alloc_failed = (VirtualProtect(rdram, mem_size, PAGE_READWRITE, &old_protect) == 0);
+        // VirtualAlloc returns nullptr on failure.
+        alloc_failed = (VirtualAlloc(rdram, mem_size, MEM_COMMIT, PAGE_READWRITE) == nullptr);
         if (alloc_failed) {
             VirtualFree(rdram, 0, MEM_RELEASE);
         }
