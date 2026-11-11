@@ -11,8 +11,13 @@ namespace recomp {
     // 4GB (the full address space)
 #ifdef __EMSCRIPTEN__
     // A 32-bit address space can't reserve 4 GiB, and WebAssembly memory has no page protection to catch stray
-    // accesses with anyway.
+    // accesses with anyway. A recomp built with RECOMP_KUSEG_WINDOW gets KUSEG's window right after kseg0 (recomp.h).
+#ifdef RECOMP_KUSEG_WINDOW
+    static_assert(RECOMP_KUSEG_WINDOW_BASE == mem_size);
+    constexpr size_t allocation_size = mem_size + RECOMP_KUSEG_WINDOW_SIZE;
+#else
     constexpr size_t allocation_size = mem_size;
+#endif
 #else
     constexpr size_t allocation_size = 4096ULL * 1024ULL * 1024ULL;
 #endif
@@ -31,6 +36,13 @@ namespace recomp {
     constexpr uint32_t sram_base = 0x08000000;
     constexpr uint32_t rom_base = 0x10000000;
     constexpr uint32_t drive_base = 0x06000000;
+
+    // Makes [vaddr, vaddr + size) of KUSEG (TLB-mapped addresses, below 0x80000000) readable and writable, for a recomp
+    // whose code reads its strings, tables and constants through them: on a native build by opening the pages of
+    // allocation_size's range it reserves there, and on the web if the range lies in the window RECOMP_KUSEG_WINDOW
+    // allocates (recomp.h). It starts zeroed, and the recomp fills it (do_rom_read writes through these addresses).
+    // False if the range can't be opened: on the web past the window, or without RECOMP_KUSEG_WINDOW.
+    bool make_kuseg_accessible(uint8_t* rdram, uint32_t vaddr, uint32_t size);
 
     void register_heap_exports();
     void init_heap(uint8_t* rdram, uint32_t address);

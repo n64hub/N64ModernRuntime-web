@@ -39,7 +39,16 @@ typedef uint8_t u8;
 #  define RDRAM_ARG1 uint8_t *rdram
 #  define PASS_RDRAM rdram, 
 #  define PASS_RDRAM1 rdram
-#  define TO_PTR(type, var) ((type*)(&rdram[(uint64_t)var - 0xFFFFFFFF80000000]))
+#  if defined(__wasm__) && defined(RECOMP_KUSEG_WINDOW)
+// KUSEG's first 16 MB in the window librecomp allocates right after kseg0's 512 MB, as N64Recomp's recomp.h maps the
+// recompiled code's loads and stores (it says why), and a KUSEG address past it wrapped inside it.
+static inline uint32_t ultramodern_rdram_offset(uint32_t a) {
+    return (a & 0x80000000u) ? a - 0x80000000u : 0x20000000u + (a & 0x00FFFFFFu);
+}
+#    define TO_PTR(type, var) ((type*)(&rdram[ultramodern_rdram_offset((uint32_t)(var))]))
+#  else
+#    define TO_PTR(type, var) ((type*)(&rdram[(uint64_t)var - 0xFFFFFFFF80000000]))
+#  endif
 #  define GET_MEMBER(type, addr, member) (addr + (intptr_t)&(((type*)nullptr)->member))
 #  ifdef __cplusplus
 #    define NULLPTR (PTR(void))0
