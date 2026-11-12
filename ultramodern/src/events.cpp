@@ -515,7 +515,7 @@ namespace {
 
 void sp_complete() {
 #if ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS
-    // A graphics task's RSP done went already if a yield was asked of it while it waited (rsp_yield_asked).
+    // A graphics task's RSP done went already if a yield was asked of it while it waited (rsp::yield_asked).
     if ((std::this_thread::get_id() == events_context.sp.gfx_thread.get_id()) && !take_graphics_sp_owed()) {
         return;
     }
@@ -846,7 +846,7 @@ void ultramodern::submit_rsp_task(RDRAM_ARG PTR(OSTask) task_) {
     }
 }
 
-void ultramodern::rsp_yield_asked() {
+void ultramodern::rsp::yield_asked() {
 #if ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS
     if (take_graphics_sp_owed()) {
         sp_complete();

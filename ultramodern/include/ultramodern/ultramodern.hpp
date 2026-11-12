@@ -101,9 +101,6 @@ void set_entrypoint_thread();
 bool is_entrypoint_thread();
 bool is_game_thread();
 void submit_rsp_task(RDRAM_ARG PTR(OSTask) task);
-// The game asked the RSP's task to yield (osSpTaskYield). With ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS (on with
-// Emscripten), a graphics task the renderer hasn't started gets its RSP done now (events.cpp); otherwise nothing.
-void rsp_yield_asked();
 void send_si_message();
 uint32_t get_speed_multiplier();
 

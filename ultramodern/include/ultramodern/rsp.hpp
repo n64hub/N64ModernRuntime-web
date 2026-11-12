@@ -27,6 +27,11 @@ namespace ultramodern {
         // game starts it (librecomp's osSpTaskStartGo), and run_task runs the task from the copy (rsp.cpp says why).
         void task_submitted(RDRAM_ARG PTR(OSTask) task);
 
+        // The game asked the RSP's task to yield (librecomp's osSpTaskYield). Where
+        // ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS is on, a graphics task the renderer hasn't started gets its RSP done
+        // now (events.cpp); otherwise nothing.
+        void yield_asked();
+
         // The data of the task the RSP is running (its OSTask's data_ptr and data_size) as the game submitted it, where
         // the task runs from a copy (task_submitted): an RSP DMA from RDRAM reads the copy wherever it covers and a DMA
         // to RDRAM writes it too (librecomp's rsp.hpp). Its size is 0 otherwise.
