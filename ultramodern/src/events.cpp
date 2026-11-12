@@ -483,7 +483,44 @@ void vi_thread_func() {
     }
 }
 
+#if ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS
+// The graphics thread tells the game its RSP task is done as it takes the task (gfx_thread_func), and ignores a yield,
+// so a task queued behind the renderer's other actions answers no yield until the renderer gets to it. A console's RSP
+// answers one within a few ms, and a game's scheduler may take a yield left unanswered at its next VI for a hung RSP:
+// Beetle Adventure Racing's asks one of the graphics task whenever an audio task comes, and at the next VI sends itself
+// the RSP's and RDP's done. Those end the queued task before the renderer has read it, and the real ones then end the
+// next, so the game took lists for done and reused what they point at: the renderer ran from a list into what the game
+// had put there since, loading vertices until the page ran out of memory, or the scheduler's thread queues broke. On a
+// page with render to RAM's late copy, which tells the game a list is done before the renderer submits it, the next
+// list waits queued that long often enough that the game never got from its menus into a race.
+// So a yield asked while a graphics task waits sends that task's RSP done at once, as if the RSP had finished before
+// the request (what osSpTaskYielded already answers), and the graphics thread sends none as it takes the task. The
+// RDP's done still comes once the renderer has read the list, and a game waits for both before it reuses a list.
+namespace {
+    // Graphics tasks sent whose RSP done hasn't gone yet.
+    std::atomic<uint32_t> graphics_sp_owed{ 0 };
+
+    bool take_graphics_sp_owed() {
+        uint32_t owed = graphics_sp_owed.load();
+        while (owed > 0) {
+            if (graphics_sp_owed.compare_exchange_weak(owed, owed - 1)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+#endif
+
 void sp_complete() {
+#if ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS
+    // A graphics task's RSP done went already if a yield was asked of it while it waited (rsp_yield_asked).
+    if ((std::this_thread::get_id() == events_context.sp.gfx_thread.get_id()) && !take_graphics_sp_owed()) {
+        return;
+    }
+#endif
+
     uint8_t* rdram = events_context.rdram;
     std::lock_guard lock{ events_context.message_mutex };
     ultramodern::enqueue_external_message_src(events_context.sp.mq, events_context.sp.msg, false, ultramodern::EventMessageSource::Sp);
@@ -798,12 +835,23 @@ void ultramodern::submit_rsp_task(RDRAM_ARG PTR(OSTask) task_) {
 
     // Send gfx tasks to the graphics action queue
     if (task->t.type == M_GFXTASK) {
+#if ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS
+        graphics_sp_owed++;
+#endif
         events_context.action_queue.enqueue(SpTaskAction{ *task });
     }
     // Set all other tasks as the RSP task
     else {
         events_context.sp_task_queue.enqueue(task);
     }
+}
+
+void ultramodern::rsp_yield_asked() {
+#if ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS
+    if (take_graphics_sp_owed()) {
+        sp_complete();
+    }
+#endif
 }
 
 void ultramodern::send_si_message() {

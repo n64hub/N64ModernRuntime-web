@@ -75,6 +75,13 @@ if (ULTRAMODERN_SCREEN_UPDATE_AFTER_VI OR EMSCRIPTEN)
     target_compile_definitions(ultramodern PRIVATE ULTRAMODERN_SCREEN_UPDATE_AFTER_VI=1)
 endif()
 
+# A yield the game asks of a graphics task the renderer hasn't started sends the task's RSP done at once, as the console's
+# RSP would answer it (src/events.cpp, rsp_yield_asked).
+option(ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS "A yield asked of a graphics task not yet started sends its RSP done at once (always on with Emscripten)" OFF)
+if (ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS OR EMSCRIPTEN)
+    target_compile_definitions(ultramodern PRIVATE ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS=1)
+endif()
+
 # No VI comes while the graphics thread has spent over 100 ms on one action, so a game can't step its logic past a list
 # the renderer is still reading (src/events.cpp, renderer_stalled).
 option(ULTRAMODERN_VIS_WAIT_FOR_RENDERER "No VI while the renderer is stalled in one action (always on with Emscripten)" OFF)
