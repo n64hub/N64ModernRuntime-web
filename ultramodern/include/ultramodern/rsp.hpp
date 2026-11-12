@@ -32,8 +32,8 @@ namespace ultramodern {
         // now (rsp.cpp says why); otherwise nothing.
         void yield_asked();
 
-        // Whether the graphics task the renderer takes still needs its RSP done sent, and if so takes it as sent: not
-        // where yield_asked sent it already. Always true where ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS is off.
+        // Whether the graphics task the renderer takes still needs its RSP done sent (false where yield_asked sent it
+        // already), counting it as sent. Always true where ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS is off.
         bool graphics_sp_due();
 
         // The data of the task the RSP is running (its OSTask's data_ptr and data_size) as the game submitted it, where

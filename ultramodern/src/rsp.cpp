@@ -4,7 +4,7 @@
 #include "ultramodern/rsp.hpp"
 
 #if ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS
-#include <atomic>
+#include <mutex>
 #endif
 
 #if ULTRAMODERN_RSP_TASKS_COPIED
@@ -70,24 +70,40 @@ static struct {
 // events.cpp's: sends the game the RSP's done.
 void sp_complete();
 
-// Graphics tasks started whose RSP done hasn't gone yet.
-static std::atomic<uint32_t> graphics_sp_owed{ 0 };
+// Counted together, under the mutex: a graphics task the graphics thread takes either sends its RSP done or finds it
+// sent by yield_asked, never both. A task a game starts without task_submitted (its own osSpTaskStartGo) isn't counted,
+// so a yield asked of it is ignored, as it was.
+static struct {
+    std::mutex mutex;
+    // Graphics tasks started whose RSP done hasn't gone yet.
+    uint32_t owed = 0;
+    // RSP dones yield_asked sent for tasks the graphics thread hasn't taken yet.
+    uint32_t sent_early = 0;
+} graphics_sp;
 
 bool ultramodern::rsp::graphics_sp_due() {
-    uint32_t owed = graphics_sp_owed.load();
-    while (owed > 0) {
-        if (graphics_sp_owed.compare_exchange_weak(owed, owed - 1)) {
-            return true;
-        }
+    std::lock_guard lock{ graphics_sp.mutex };
+    if (graphics_sp.sent_early > 0) {
+        graphics_sp.sent_early--;
+        return false;
+    }
+    if (graphics_sp.owed > 0) {
+        graphics_sp.owed--;
     }
 
-    return false;
+    return true;
 }
 
 void ultramodern::rsp::yield_asked() {
-    if (graphics_sp_due()) {
-        sp_complete();
+    // Sent under the mutex, so the graphics thread can't take the task and send its RDP's done first. sp_complete takes
+    // only the events' message mutex, which the graphics thread doesn't hold as it asks graphics_sp_due.
+    std::lock_guard lock{ graphics_sp.mutex };
+    if (graphics_sp.owed == 0) {
+        return;
     }
+    graphics_sp.owed--;
+    graphics_sp.sent_early++;
+    sp_complete();
 }
 #else
 bool ultramodern::rsp::graphics_sp_due() {
@@ -102,7 +118,8 @@ void ultramodern::rsp::task_submitted(RDRAM_ARG PTR(OSTask) task_) {
 #if ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS
     // Counted before the graphics thread can take it (submit_rsp_task comes after)
     if (TO_PTR(OSTask, task_)->t.type == M_GFXTASK) {
-        graphics_sp_owed++;
+        std::lock_guard lock{ graphics_sp.mutex };
+        graphics_sp.owed++;
     }
 #endif
 #if ULTRAMODERN_RSP_TASKS_COPIED
