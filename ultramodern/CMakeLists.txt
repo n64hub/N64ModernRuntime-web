@@ -76,7 +76,7 @@ if (ULTRAMODERN_SCREEN_UPDATE_AFTER_VI OR EMSCRIPTEN)
 endif()
 
 # A yield the game asks of a graphics task the renderer hasn't started sends the task's RSP done at once, as the console's
-# RSP would answer it (src/events.cpp, rsp::yield_asked).
+# RSP would answer it (src/rsp.cpp, rsp::yield_asked).
 option(ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS "A yield asked of a graphics task not yet started sends its RSP done at once (always on with Emscripten)" OFF)
 if (ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS OR EMSCRIPTEN)
     target_compile_definitions(ultramodern PRIVATE ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS=1)

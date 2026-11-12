@@ -42,7 +42,7 @@ extern "C" void osSpTaskStartGo_recomp(uint8_t* rdram, recomp_context* ctx) {
 
 extern "C" void osSpTaskYield_recomp(uint8_t* rdram, recomp_context* ctx) {
     // Ignore yield requests (acts as if the task completed before it received the yield request)
-    // A graphics task still waiting for the renderer gets its RSP done now (ultramodern's events.cpp, rsp::yield_asked).
+    // A graphics task still waiting for the renderer gets its RSP done now (ultramodern's rsp.cpp, rsp::yield_asked).
     ultramodern::rsp::yield_asked();
 }
 

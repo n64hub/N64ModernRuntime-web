@@ -3,6 +3,10 @@
 
 #include "ultramodern/rsp.hpp"
 
+#if ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS
+#include <atomic>
+#endif
+
 #if ULTRAMODERN_RSP_TASKS_COPIED
 #include <iterator>
 #include <memory>
@@ -49,7 +53,58 @@ static struct {
 } submitted_tasks;
 #endif
 
+#if ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS
+// The graphics thread tells the game its RSP task is done as it takes the task (events.cpp, gfx_thread_func), and ignores
+// a yield, so a task queued behind the renderer's other actions answers no yield until the renderer gets to it. A
+// console's RSP answers one within a few ms, and a game's scheduler may take a yield left unanswered at its next VI for a
+// hung RSP: Beetle Adventure Racing's asks one of the graphics task whenever an audio task comes, and at the next VI
+// sends itself the RSP's and RDP's done. Those end the queued task before the renderer has read it, and the real ones
+// then end the next, so the game took lists for done and reused what they point at: the renderer ran from a list into
+// what the game had put there since, loading vertices until the page ran out of memory, or the scheduler's thread queues
+// broke. On a page with render to RAM's late copy, which tells the game a list is done before the renderer submits it,
+// the next list waits queued that long often enough that the game never got from its menus into a race.
+// So a yield asked while a graphics task waits sends that task's RSP done at once, as if the RSP had finished before
+// the request (what osSpTaskYielded already answers), and the graphics thread sends none as it takes the task. The
+// RDP's done still comes once the renderer has read the list, and a game waits for both before it reuses a list.
+
+// events.cpp's: sends the game the RSP's done.
+void sp_complete();
+
+// Graphics tasks started whose RSP done hasn't gone yet.
+static std::atomic<uint32_t> graphics_sp_owed{ 0 };
+
+bool ultramodern::rsp::graphics_sp_due() {
+    uint32_t owed = graphics_sp_owed.load();
+    while (owed > 0) {
+        if (graphics_sp_owed.compare_exchange_weak(owed, owed - 1)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void ultramodern::rsp::yield_asked() {
+    if (graphics_sp_due()) {
+        sp_complete();
+    }
+}
+#else
+bool ultramodern::rsp::graphics_sp_due() {
+    return true;
+}
+
+void ultramodern::rsp::yield_asked() {
+}
+#endif
+
 void ultramodern::rsp::task_submitted(RDRAM_ARG PTR(OSTask) task_) {
+#if ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS
+    // Counted before the graphics thread can take it (submit_rsp_task comes after)
+    if (TO_PTR(OSTask, task_)->t.type == M_GFXTASK) {
+        graphics_sp_owed++;
+    }
+#endif
 #if ULTRAMODERN_RSP_TASKS_COPIED
     const OSTask* task = TO_PTR(OSTask, task_);
     // A graphics task's OSTask goes to the renderer as a copy already (events.cpp, SpTaskAction)
