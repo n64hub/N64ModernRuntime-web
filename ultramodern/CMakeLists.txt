@@ -82,10 +82,9 @@ if (ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS OR EMSCRIPTEN)
     target_compile_definitions(ultramodern PRIVATE ULTRAMODERN_YIELDS_END_QUEUED_GRAPHICS=1)
 endif()
 
-# No VI comes while the graphics thread has spent over 100 ms on one action, or a graphics task has gone unfinished for
-# two VIs, so a game can't step its logic past a list the renderer is still reading (src/events.cpp, renderer_stalled,
-# list_unread).
-option(ULTRAMODERN_VIS_WAIT_FOR_RENDERER "No VI while the renderer is stalled in one action or a list is unfinished for two VIs (always on with Emscripten)" OFF)
+# No VI comes while the graphics thread has spent over two VIs (30 ms) on one action, so a game can't step its logic
+# past a list the renderer is still reading (src/events.cpp, renderer_stalled).
+option(ULTRAMODERN_VIS_WAIT_FOR_RENDERER "No VI while the renderer is stalled in one action (always on with Emscripten)" OFF)
 if (ULTRAMODERN_VIS_WAIT_FOR_RENDERER OR EMSCRIPTEN)
     target_compile_definitions(ultramodern PRIVATE ULTRAMODERN_VIS_WAIT_FOR_RENDERER=1)
 endif()

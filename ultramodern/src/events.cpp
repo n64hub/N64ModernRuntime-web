@@ -340,8 +340,6 @@ namespace {
 #endif
 
 #if ULTRAMODERN_VIS_WAIT_FOR_RENDERER
-#include <deque>
-
 // The VI thread sends no VI while the graphics thread has spent more than a few VIs on one action. The thread tells the
 // game its RSP task is done before the renderer reads the list (gfx_thread_func), and a console's RSP has read it a few
 // ms later, so a game can step its logic every VI whatever its lists do: Paper Mario's runs before it checks how many
@@ -351,13 +349,12 @@ namespace {
 // list the renderer was still reading pointed at what the map's load had put there since: a function pointer read
 // 0x00010001 and the page trapped, or it trapped in malloc, or it stopped drawing. Held, the game sees the stall as a
 // console would never show it, one long VI.
-// Nor does a VI come while a graphics task the game started has gone unfinished for two VIs (list_unread()): a stall
-// of one action shows only after 100 ms, six VIs, and a page whose every list takes about that long gave the game those
-// six VIs behind each one. In Firefox, its tab hidden on a busy host, Paper Mario's lists took 50-230 ms each, and as
-// its intro story handed over to the attract demo the game freed what the list in hand pointed at: it trapped in its
-// heap allocator, the free list corrupt, or stopped drawing for good, 4-6 s after the hide in 3 plays of 3. Held at
-// two, it came through in 3 of 3 and went on into the demo. A console's RDP is done with a list a VI or two after it
-// starts.
+// A stall is two VIs, not six: a page whose every list took about 100 ms left the game six VIs behind each one. In
+// Firefox, its tab hidden on a busy host, Paper Mario's lists took 50-230 ms each (its render to RAM's readbacks waiting
+// on the page's thread), the game stepped its logic three times behind each, and as its intro story handed over to the
+// attract demo it freed what the list in hand pointed at: it trapped in its heap allocator, the free list corrupt, or
+// stopped drawing for good, 4-6 s after the hide in 3 plays of 3. Held after two VIs, as a console's RDP is done with a
+// list a VI or two after it starts, it came through and went on into the demo.
 // Both sides touch only lines a game fork's own patches to this file leave alone (DKR-R-web's rewrite the VI messages'
 // block and the graphics thread's actions).
 namespace {
@@ -366,8 +363,9 @@ namespace {
     // in Firefox (each worker's own performance.timeOrigin), so only the VI thread's own clock times it.
     std::atomic<uint32_t> renderer_loop_turns{ 0 };
 
-    // Six VIs: a list or screen update takes a few ms, and on a phone 10-90 ms at the first list of a new screen.
-    constexpr std::chrono::milliseconds renderer_stall_limit{ 100 };
+    // Two VIs: a list or screen update takes a few ms. The VI thread looks once a VI, so a game gets two or three VIs of
+    // an action before the hold. Over a timed wait's tick in Firefox (15.6 ms), so an idle thread isn't taken for one.
+    constexpr std::chrono::milliseconds renderer_stall_limit{ 30 };
 
     // Whether the graphics thread has made no turn for renderer_stall_limit, as the VI thread (its only caller) has seen.
     // None before its loop's first turn.
@@ -383,21 +381,6 @@ namespace {
         }
 
         return (now - seen_time) > renderer_stall_limit;
-    }
-
-    // The VIs the VI thread has let through, and the count at which each graphics task the renderer hasn't finished
-    // (its DP message not sent yet, dp_complete()) was started, oldest first.
-    std::atomic<uint64_t> vis_sent{ 0 };
-    std::mutex unread_lists_mutex;
-    std::deque<uint64_t> unread_lists;
-
-    // How many VIs the game gets while a list of its is unfinished.
-    constexpr uint64_t unread_list_vis = 2;
-
-    // Whether the oldest graphics task the renderer hasn't finished has had unread_list_vis VIs since it was started.
-    bool list_unread() {
-        std::lock_guard lock{ unread_lists_mutex };
-        return !unread_lists.empty() && ((vis_sent.load() - unread_lists.front()) >= unread_list_vis);
     }
 }
 #endif
@@ -432,12 +415,10 @@ void vi_thread_func() {
             next = std::chrono::high_resolution_clock::now();
         }
 #if ULTRAMODERN_VIS_WAIT_FOR_RENDERER
-        // No VI while the graphics thread is stalled in one action (renderer_stalled()) or a list has gone unfinished for
-        // two VIs (list_unread()); the next comes once neither is.
-        while ((renderer_stalled() || list_unread()) && !exited) {
+        // No VI while the graphics thread is stalled in one action (renderer_stalled()); the next comes once it isn't.
+        while (renderer_stalled() && !exited) {
             std::this_thread::sleep_for(1ms);
         }
-        vis_sent++;
 #endif
 #if defined(__EMSCRIPTEN_PTHREADS__)
         // A VI that ended on a frame leaves the timed wait below nothing to wait for. That wait stays where it was, so
@@ -531,15 +512,6 @@ void dp_complete() {
     if (ultramodern::renderer::take_rdp_done()) {
         return;
     }
-
-#if ULTRAMODERN_VIS_WAIT_FOR_RENDERER
-    {
-        std::lock_guard lock{ unread_lists_mutex };
-        if (!unread_lists.empty()) {
-            unread_lists.pop_front();
-        }
-    }
-#endif
 
     uint8_t* rdram = events_context.rdram;
     std::lock_guard lock{ events_context.message_mutex };
@@ -857,12 +829,6 @@ void ultramodern::submit_rsp_task(RDRAM_ARG PTR(OSTask) task_) {
 
     // Send gfx tasks to the graphics action queue
     if (task->t.type == M_GFXTASK) {
-#if ULTRAMODERN_VIS_WAIT_FOR_RENDERER
-        {
-            std::lock_guard lock{ unread_lists_mutex };
-            unread_lists.push_back(vis_sent.load());
-        }
-#endif
         events_context.action_queue.enqueue(SpTaskAction{ *task });
     }
     // Set all other tasks as the RSP task
