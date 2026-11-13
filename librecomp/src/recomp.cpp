@@ -820,6 +820,11 @@ bool wait_for_game_started(uint8_t* rdram, recomp_context* context) {
                 ultramodern::init_saving(rdram);
 
 #ifdef __EMSCRIPTEN__
+                // What the renderer must build before the game draws (RT64's prebuilt shaders for the game's boot, where
+                // the browser builds pipelines in line with its other GPU work) is built now, before the game's first
+                // sound, which the same wait at its first frames cut short for 0.1-11.7 s in Firefox.
+                ultramodern::renderer::prepare_for_game();
+
                 // Tells the page its game is running, past the launcher: the shell's on-screen controller shows from here.
                 MAIN_THREAD_ASYNC_EM_ASM({ if (Module.gameStarted) Module.gameStarted(); });
 #endif

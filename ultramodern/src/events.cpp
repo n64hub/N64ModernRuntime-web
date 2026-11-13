@@ -39,7 +39,11 @@ struct DummyWorkloadAction {
     int32_t fb_address;
 };
 
-using Action = std::variant<SpTaskAction, ScreenUpdateAction, UpdateConfigAction, DummyWorkloadAction>;
+struct PrepareForGameAction {
+    moodycamel::LightweightSemaphore* done;
+};
+
+using Action = std::variant<SpTaskAction, ScreenUpdateAction, UpdateConfigAction, DummyWorkloadAction, PrepareForGameAction>;
 
 struct ViState {
     const OSViMode* mode = nullptr;
@@ -562,6 +566,15 @@ void ultramodern::trigger_config_action() {
     events_context.action_queue.enqueue(UpdateConfigAction{});
 }
 
+// The graphics thread takes it after every action queued before it: the launcher's lists and screen updates, all of
+// them the renderer's before the game's. With Emscripten the VI thread sends no VI while the renderer is in it
+// (renderer_stalled()), so the game, its audio interrupts included, starts after it, as if it had started then.
+void ultramodern::renderer::prepare_for_game() {
+    moodycamel::LightweightSemaphore done;
+    events_context.action_queue.enqueue(PrepareForGameAction{ &done });
+    done.wait();
+}
+
 std::atomic<ultramodern::renderer::SetupResult> renderer_setup_result = ultramodern::renderer::SetupResult::Success;
 std::atomic<ultramodern::renderer::GraphicsApi> renderer_chosen_api = ultramodern::renderer::GraphicsApi::Auto;
 
@@ -637,6 +650,10 @@ void gfx_thread_func(uint8_t* rdram, moodycamel::LightweightSemaphore* thread_re
             }
             else if (const auto* dummy_workload_action = std::get_if<DummyWorkloadAction>(&action)) {
                 renderer_context->send_dummy_workload(dummy_workload_action->fb_address);
+            }
+            else if (const auto* prepare_action = std::get_if<PrepareForGameAction>(&action)) {
+                renderer_context->prepare_for_game();
+                prepare_action->done->signal();
             }
         }
     }

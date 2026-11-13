@@ -89,6 +89,10 @@ namespace ultramodern {
                 virtual void shutdown() = 0;
                 virtual uint32_t get_display_framerate() const = 0;
                 virtual float get_resolution_scale() const = 0;
+                // Called on the graphics thread before the game's code first runs, with Emscripten (prepare_for_game()):
+                // what the renderer has to build before the game draws is built here, where it holds up nothing the
+                // player hears, rather than at the game's first frames, where the game waits with its sound started.
+                virtual void prepare_for_game() {}
 
             protected:
                 SetupResult setup_result;
@@ -121,6 +125,10 @@ namespace ultramodern {
         void rdp_done();
         // Whether rdp_done sent the DP's message of the task send_dl was given, which it then forgets.
         bool take_rdp_done();
+
+        // Has the graphics thread run RendererContext::prepare_for_game and waits for it: from the game's thread, before
+        // its entrypoint (librecomp's wait_for_game_started()).
+        void prepare_for_game();
 
         std::unique_ptr<RendererContext> create_render_context(uint8_t* rdram, WindowHandle window_handle, bool developer_mode);
 
