@@ -355,6 +355,12 @@ namespace {
 // attract demo it freed what the list in hand pointed at: it trapped in its heap allocator, the free list corrupt, or
 // stopped drawing for good, 4-6 s after the hide in 3 plays of 3. Held after two VIs, as a console's RDP is done with a
 // list a VI or two after it starts, it came through and went on into the demo.
+// Nor once the renderer has told the game the list in hand is done (renderer::rdp_done): it reads nothing more of RDRAM
+// for it, and what is left is its own work, the wait for a busy GPU included. Held there, the game's clock stopped for
+// nothing, and its sound with it, which nothing makes up afterwards: Rush 2049's page in Firefox, uncapped and its tab
+// hidden, held its VIs 91-105 times a play (9.5-11.9 s in all) and its sound ran 238,000-253,000 frames short, most of
+// it through a 5 s wait for a section's prebuilt shaders as its attract race starts; lifted at the RDP's done, it held 4
+// times (only before its sound starts) and lost none.
 // Both sides touch only lines a game fork's own patches to this file leave alone (DKR-R-web's rewrite the VI messages'
 // block and the graphics thread's actions).
 namespace {
@@ -374,7 +380,7 @@ namespace {
         static std::chrono::steady_clock::time_point seen_time{};
         const uint32_t turns = renderer_loop_turns.load();
         const auto now = std::chrono::steady_clock::now();
-        if ((turns == 0) || (turns != seen_turns)) {
+        if ((turns == 0) || (turns != seen_turns) || ultramodern::renderer::rdp_done_pending()) {
             seen_turns = turns;
             seen_time = now;
             return false;

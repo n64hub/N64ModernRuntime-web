@@ -1,4 +1,5 @@
 #include <cassert>
+#include <atomic>
 #include <mutex>
 
 #include "ultramodern/renderer_context.hpp"
@@ -12,8 +13,9 @@ void ultramodern::renderer::set_callbacks(const callbacks_t& callbacks) {
 
 void dp_complete();
 
-// Whether rdp_done sent the DP's message of the graphics task send_dl was given. Only the graphics thread touches it.
-static bool rdp_done_sent = false;
+// Whether rdp_done sent the DP's message of the graphics task send_dl was given. Only the graphics thread writes it; the
+// VI thread reads it (rdp_done_pending).
+static std::atomic<bool> rdp_done_sent{ false };
 
 void ultramodern::renderer::rdp_done() {
     dp_complete();
@@ -21,9 +23,11 @@ void ultramodern::renderer::rdp_done() {
 }
 
 bool ultramodern::renderer::take_rdp_done() {
-    const bool sent = rdp_done_sent;
-    rdp_done_sent = false;
-    return sent;
+    return rdp_done_sent.exchange(false);
+}
+
+bool ultramodern::renderer::rdp_done_pending() {
+    return rdp_done_sent.load();
 }
 
 

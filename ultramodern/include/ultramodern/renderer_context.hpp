@@ -125,6 +125,9 @@ namespace ultramodern {
         void rdp_done();
         // Whether rdp_done sent the DP's message of the task send_dl was given, which it then forgets.
         bool take_rdp_done();
+        // Whether rdp_done has sent the DP's message of the task the graphics thread is in, so the renderer reads nothing
+        // more of RDRAM for it. From any thread.
+        bool rdp_done_pending();
 
         // Has the graphics thread run RendererContext::prepare_for_game and waits for it: from the game's thread, before
         // its entrypoint (librecomp's wait_for_game_started()).
