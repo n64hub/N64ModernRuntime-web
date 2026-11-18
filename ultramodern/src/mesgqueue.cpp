@@ -36,12 +36,6 @@ void ultramodern::set_message_queue_control(const ultramodern::MessageQueueContr
 }
 
 void ultramodern::enqueue_external_message_src(PTR(OSMesgQueue) mq, OSMesg msg, bool jam, EventMessageSource src) {
-    // An event no queue was set for sends nothing, as libultra's event dispatch does: a game that never calls
-    // osSetEventMesg for an event (Excitebike 64's scheduler sets none for OS_EVENT_SP and waits for the DP alone)
-    // would otherwise have its message sent to a null queue, which crashes the thread that receives it.
-    if (mq == NULLPTR) {
-        return;
-    }
     external_messages.enqueue({mq, msg, jam, requeue_enabled[static_cast<int>(src)]});
 }
 
@@ -143,6 +137,13 @@ s32 MQ_IS_FULL(OSMesgQueue* mq) {
 }
 
 bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block) {
+    // An event no queue was set for sends nothing, as libultra's event dispatch does: a game that never calls
+    // osSetEventMesg for an event (Excitebike 64's scheduler sets none for OS_EVENT_SP and waits for the DP alone)
+    // would otherwise have its message sent to a null queue, which crashes the thread that receives it. It counts as
+    // sent, so nothing requeues it.
+    if (mq_ == NULLPTR) {
+        return true;
+    }
     OSMesgQueue* mq = TO_PTR(OSMesgQueue, mq_);
     if (!block) {
         // If non-blocking, fail if the queue is full.
