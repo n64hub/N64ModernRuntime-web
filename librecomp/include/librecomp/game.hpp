@@ -25,6 +25,9 @@ namespace recomp {
         std::u8string game_id;
         std::string mod_game_id;
         SaveType save_type = SaveType::None;
+        // A bit for each port holding a file-backed Controller Pak (librecomp/src/pak.cpp), bit 0 for controller 1.
+        // None by default: a port without its bit answers that no pak is plugged in.
+        uint8_t controller_pak_ports = 0;
         std::span<const char> thumbnail_bytes;
         bool is_enabled;
         // Only needed for mod function hooking support, not needed if `has_compressed_code` is false.
@@ -37,10 +40,6 @@ namespace recomp {
         void (*thread_create_callback)(uint8_t* rdram, recomp_context* context) = nullptr;
 
         void (*on_init_callback)(uint8_t* rdram, recomp_context* context) = nullptr;
-
-        // A bit for each port holding a file-backed Controller Pak (librecomp/src/pak.cpp), bit 0 for controller 1.
-        // None by default: a port without its bit answers that no pak is plugged in.
-        uint8_t controller_pak_ports = 0;
 
         std::u8string stored_filename() const;
     };
