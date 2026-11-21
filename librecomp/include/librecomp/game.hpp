@@ -38,6 +38,10 @@ namespace recomp {
 
         void (*on_init_callback)(uint8_t* rdram, recomp_context* context) = nullptr;
 
+        // A bit for each port holding a file-backed Controller Pak (librecomp/src/pak.cpp), bit 0 for controller 1.
+        // None by default: a port without its bit answers that no pak is plugged in.
+        uint8_t controller_pak_ports = 0;
+
         std::u8string stored_filename() const;
     };
     struct Version {
@@ -85,6 +89,8 @@ namespace recomp {
     };
     void register_config_path(std::filesystem::path path);
     std::filesystem::path get_config_path();
+    // The running game's GameEntry::controller_pak_ports, 0 before a game starts.
+    uint8_t get_controller_pak_ports();
     bool register_game(const recomp::GameEntry& entry);
     void check_all_stored_roms();
     bool load_stored_rom(const std::u8string& game_id);
