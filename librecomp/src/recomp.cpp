@@ -529,14 +529,6 @@ std::string current_game_mode_id;
 std::optional<std::u8string> current_game = std::nullopt;
 std::atomic<GameStatus> game_status = GameStatus::None;
 
-uint8_t recomp::get_controller_pak_ports() {
-    if (!current_game.has_value()) {
-        return 0;
-    }
-    auto find_it = game_roms.find(current_game.value());
-    return find_it == game_roms.end() ? 0 : find_it->second.controller_pak_ports;
-}
-
 void run_thread_function(uint8_t* rdram, uint64_t addr, uint64_t sp, uint64_t arg) {
     auto find_it = game_roms.find(current_game.value());
     const recomp::GameEntry& game_entry = find_it->second;
@@ -553,6 +545,14 @@ void run_thread_function(uint8_t* rdram, uint64_t addr, uint64_t sp, uint64_t ar
 
     recomp_func_t* func = get_function(addr);
     func(rdram, &ctx);
+}
+
+uint8_t recomp::get_controller_pak_ports() {
+    if (!current_game.has_value()) {
+        return 0;
+    }
+    auto find_it = game_roms.find(current_game.value());
+    return find_it == game_roms.end() ? 0 : find_it->second.controller_pak_ports;
 }
 
 void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
