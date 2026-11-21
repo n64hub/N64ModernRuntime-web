@@ -6,11 +6,14 @@
 // games probe a port with osPfsInitPak before they look for a Rumble Pak in it, and start its rumble only when that
 // probe fails.
 //
+// A game whose own settings choose the pak's size, or a Rumble Pak in its place, says so with
+// GameEntry::controller_pak_banks, asked each time the game initializes a port's pak.
+//
 // A game that defines every function this file does keeps its own pak: the linker uses its functions and never pulls
 // this object in.
 //
 // The image is the real on-pak layout, the same `.mpk` format emulators use, of one bank of 32 KiB as Nintendo's own
-// paks are:
+// paks are, unless the game asks for more:
 //   page 0          ID area (ID block copies at 0x20, 0x60, 0x80, 0xC0; byte 0x1A of the block is the bank count, 1)
 //   page 1          inode table: 128 big-endian u16 entries, one per page. 0x0001 ends a chain, 0x0003 is free,
 //                   anything else is the next page. Byte 1 is a checksum of its entries from the first data page on.
@@ -21,8 +24,8 @@
 // the note table after them, and its other banks' pages from page 1 on all data.
 // Files are controllerpak_<port>.mpk, port 1 to 4, in the folder of the game's own save (saves/ in the config folder),
 // so a page's save sync keeps them like any other save. A port without a file gets a freshly formatted pak, written
-// out on the first change, and a file of more banks (an emulator's larger pak) has its files moved to one bank when
-// the game initializes it, if they fit. Each write is whole: to <file>.tmp, renamed over the file, and a file that is
+// out on the first change, and a file of another size (an emulator's larger pak, or the game's setting changed) has its
+// files moved to a pak of the size the game asks for when the game initializes it, if they fit. Each write is whole: to <file>.tmp, renamed over the file, and a file that is
 // a symlink, as when saves are shared through a synced folder, has the file it points at replaced and stays a link.
 
 #include <array>
@@ -46,6 +49,7 @@ constexpr int PFS_ERR_INVALID = 5;
 constexpr int PFS_DATA_FULL = 7;
 constexpr int PFS_DIR_FULL = 8;
 constexpr int PFS_ERR_EXIST = 9;
+constexpr int PFS_ERR_DEVICE = 11;
 constexpr int PFS_INITIALIZED = 1;
 
 constexpr size_t page_size = 256;
@@ -74,6 +78,12 @@ std::array<Pak, 4> paks;
 
 bool has_pak(int port) {
     return port >= 0 && port < 4 && (recomp::get_controller_pak_ports() >> port) & 1;
+}
+
+// The banks the game asks for in a port, or 0 for a Rumble Pak in place of the pak.
+int wanted_banks(int port) {
+    int banks = recomp::get_controller_pak_banks(port);
+    return banks < 0 ? 1 : banks > max_banks ? max_banks : banks;
 }
 
 std::filesystem::path pak_path(int port) {
@@ -287,7 +297,8 @@ Pak& get_pak(int port) {
             good = file.good() && pak.data[id_offset + 0x1A] == pak.banks;
         }
         if (!good) {
-            format(pak, port, 1);
+            int banks = wanted_banks(port);
+            format(pak, port, banks == 0 ? 1 : banks);
         }
         pak.loaded = true;
     }
@@ -336,17 +347,27 @@ extern "C" void osPfsInitPak_recomp(uint8_t* rdram, recomp_context* ctx) {
         ctx->r2 = PFS_ERR_NOPACK;
         return;
     }
+    int banks = wanted_banks(channel);
+    if (banks == 0) {
+        // A Rumble Pak in the slot: libultra finds an accessory there, fills in status, queue and channel, and fails
+        // to read a pak's ID from it. Games tell this from an empty slot by the error, or by the queue it filled in.
+        MEM_W(0x00, pfs) = 0;                // status
+        MEM_W(0x04, pfs) = (int32_t)ctx->r4; // queue
+        MEM_W(0x08, pfs) = channel;          // channel
+        ctx->r2 = PFS_ERR_DEVICE;
+        return;
+    }
     std::lock_guard lock{ pak_mutex };
     Pak& pak = get_pak(channel);
 
-    if (pak.banks != 1) {
+    if (pak.banks != banks) {
         int from = pak.banks;
-        if (resize(pak, channel, 1)) {
-            fprintf(stderr, "[pak] port %d: %d banks -> 1\n", channel + 1, from);
+        if (resize(pak, channel, banks)) {
+            fprintf(stderr, "[pak] port %d: %d bank(s) -> %d\n", channel + 1, from, banks);
             save(channel);
         }
         else {
-            fprintf(stderr, "[pak] port %d: its files don't fit in 1 bank, keeping %d\n", channel + 1, from);
+            fprintf(stderr, "[pak] port %d: its files don't fit in %d bank(s), keeping %d\n", channel + 1, banks, from);
         }
     }
 

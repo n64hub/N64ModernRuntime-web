@@ -555,6 +555,17 @@ uint8_t recomp::get_controller_pak_ports() {
     return find_it == game_roms.end() ? 0 : find_it->second.controller_pak_ports;
 }
 
+int recomp::get_controller_pak_banks(int port) {
+    if (!current_game.has_value()) {
+        return 1;
+    }
+    auto find_it = game_roms.find(current_game.value());
+    if (find_it == game_roms.end() || find_it->second.controller_pak_banks == nullptr) {
+        return 1;
+    }
+    return find_it->second.controller_pak_banks(port);
+}
+
 void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
     // Initialize the overlays
     recomp::overlays::init_overlays();

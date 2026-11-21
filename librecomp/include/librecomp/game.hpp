@@ -33,6 +33,11 @@ namespace recomp {
         // A bit for each port holding a file-backed Controller Pak (librecomp/src/pak.cpp), bit 0 for controller 1.
         // None by default: a port without its bit answers that no pak is plugged in.
         uint8_t controller_pak_ports = 0;
+        // For a game whose own settings choose what a port's slot holds. Called each time the game initializes the pak
+        // in a port of controller_pak_ports, it returns the pak's banks, 1 to 62 (libultra's PFS_MAX_BANKS; a pak of
+        // another size has its files moved to one of that size, if they fit), or 0 for a Rumble Pak in the slot in
+        // place of the Controller Pak, which osPfsInitPak fails with PFS_ERR_DEVICE as libultra's does. Null: one bank.
+        int (*controller_pak_banks)(int port) = nullptr;
 
         gpr entrypoint_address;
         void (*entrypoint)(uint8_t* rdram, recomp_context* context) = nullptr;
@@ -101,6 +106,8 @@ namespace recomp {
     const Version& get_project_version();
     // The running game's GameEntry::controller_pak_ports, 0 before a game starts.
     uint8_t get_controller_pak_ports();
+    // The running game's GameEntry::controller_pak_banks for a port, 1 when it has none.
+    int get_controller_pak_banks(int port);
 
     /// Specify the input configuration to the recomp runtime.
     /// 
