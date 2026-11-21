@@ -25,8 +25,9 @@
 // Files are controllerpak_<port>.mpk, port 1 to 4, in the folder of the game's own save (saves/ in the config folder),
 // so a page's save sync keeps them like any other save. A port without a file gets a freshly formatted pak, written
 // out on the first change, and a file of another size (an emulator's larger pak, or the game's setting changed) has its
-// files moved to a pak of the size the game asks for when the game initializes it, if they fit. Each write is whole: to <file>.tmp, renamed over the file, and a file that is
-// a symlink, as when saves are shared through a synced folder, has the file it points at replaced and stays a link.
+// files moved to a pak of the size the game asks for when the game initializes it, if they fit. Each write is whole:
+// to <file>.tmp, renamed over the file, and a file that is a symlink, as when saves are shared through a synced folder,
+// has the file it points at replaced and stays a link.
 
 #include <array>
 #include <cstdio>
