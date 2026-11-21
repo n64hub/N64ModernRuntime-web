@@ -25,14 +25,14 @@ namespace recomp {
         std::u8string game_id;
         std::string mod_game_id;
         SaveType save_type = SaveType::None;
-        // A bit for each port holding a file-backed Controller Pak (librecomp/src/pak.cpp), bit 0 for controller 1.
-        // None by default: a port without its bit answers that no pak is plugged in.
-        uint8_t controller_pak_ports = 0;
         std::span<const char> thumbnail_bytes;
         bool is_enabled;
         // Only needed for mod function hooking support, not needed if `has_compressed_code` is false.
         std::vector<uint8_t> (*decompression_routine)(std::span<const uint8_t> compressed_rom) = nullptr;
         bool has_compressed_code = false;
+        // A bit for each port holding a file-backed Controller Pak (librecomp/src/pak.cpp), bit 0 for controller 1.
+        // None by default: a port without its bit answers that no pak is plugged in.
+        uint8_t controller_pak_ports = 0;
 
         gpr entrypoint_address;
         void (*entrypoint)(uint8_t* rdram, recomp_context* context) = nullptr;
@@ -88,8 +88,6 @@ namespace recomp {
     };
     void register_config_path(std::filesystem::path path);
     std::filesystem::path get_config_path();
-    // The running game's GameEntry::controller_pak_ports, 0 before a game starts.
-    uint8_t get_controller_pak_ports();
     bool register_game(const recomp::GameEntry& entry);
     void check_all_stored_roms();
     bool load_stored_rom(const std::u8string& game_id);
@@ -101,6 +99,8 @@ namespace recomp {
     void do_rom_read(uint8_t* rdram, gpr ram_address, uint32_t physical_addr, size_t num_bytes);
     void do_rom_pio(uint8_t* rdram, gpr ram_address, uint32_t physical_addr);
     const Version& get_project_version();
+    // The running game's GameEntry::controller_pak_ports, 0 before a game starts.
+    uint8_t get_controller_pak_ports();
 
     /// Specify the input configuration to the recomp runtime.
     /// 

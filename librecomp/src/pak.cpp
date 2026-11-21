@@ -19,11 +19,11 @@
 //   pages 5-127     data, 256 bytes a page (123 pages, the "123 pages" games' menus count)
 // A larger pak (1 to 62 banks, libultra's PFS_MAX_BANKS) has an inode table and a backup for each bank after page 0,
 // the note table after them, and its other banks' pages from page 1 on all data.
-// Files are saves/controllerpak_<port>.mpk in the config folder, port 1 to 4, so a page's save sync keeps them like any
-// other save. A port without a file gets a freshly formatted pak, written out on the first change, and a file of more
-// banks (an emulator's larger pak) has its files moved to one bank when the game initializes it, if they fit. Each
-// write is whole: to <file>.tmp, renamed over the file, and a file that is a symlink, as when saves are shared through a
-// synced folder, has the file it points at replaced and stays a link.
+// Files are controllerpak_<port>.mpk, port 1 to 4, in the folder of the game's own save (saves/ in the config folder),
+// so a page's save sync keeps them like any other save. A port without a file gets a freshly formatted pak, written
+// out on the first change, and a file of more banks (an emulator's larger pak) has its files moved to one bank when
+// the game initializes it, if they fit. Each write is whole: to <file>.tmp, renamed over the file, and a file that is
+// a symlink, as when saves are shared through a synced folder, has the file it points at replaced and stays a link.
 
 #include <array>
 #include <cstdio>
@@ -37,6 +37,7 @@
 
 #include "recomp.h"
 #include "librecomp/game.hpp"
+#include "ultramodern/ultramodern.hpp"
 
 namespace {
 
@@ -76,7 +77,7 @@ bool has_pak(int port) {
 }
 
 std::filesystem::path pak_path(int port) {
-    return recomp::get_config_path() / "saves" / ("controllerpak_" + std::to_string(port + 1) + ".mpk");
+    return ultramodern::get_save_file_path().parent_path() / ("controllerpak_" + std::to_string(port + 1) + ".mpk");
 }
 
 uint16_t read16(const uint8_t* p) { return (uint16_t)((p[0] << 8) | p[1]); }
