@@ -71,3 +71,40 @@ else()
     target_link_libraries(librecomp PRIVATE ultramodern N64Recomp LiveRecomp)
 endif()
 target_link_libraries(librecomp PUBLIC miniz)
+
+# Load ROM (select_rom) takes the ROM inside a .zip, .7z, .gz, .xz or .tar (src/rom_archive.cpp), with the LZMA SDK's
+# 7z and xz decoders (thirdparty/lzma-sdk).
+option(RECOMP_ROM_ARCHIVES "Load ROM takes a ROM inside a .zip, .7z, .gz, .xz or .tar (always on with Emscripten)" OFF)
+if (RECOMP_ROM_ARCHIVES OR EMSCRIPTEN)
+    set(RECOMP_LZMA_SDK_DIR "${PROJECT_SOURCE_DIR}/../thirdparty/lzma-sdk")
+    add_library(recomp_lzma_sdk STATIC
+        "${RECOMP_LZMA_SDK_DIR}/7zArcIn.c"
+        "${RECOMP_LZMA_SDK_DIR}/7zBuf.c"
+        "${RECOMP_LZMA_SDK_DIR}/7zCrc.c"
+        "${RECOMP_LZMA_SDK_DIR}/7zCrcOpt.c"
+        "${RECOMP_LZMA_SDK_DIR}/7zDec.c"
+        "${RECOMP_LZMA_SDK_DIR}/7zStream.c"
+        "${RECOMP_LZMA_SDK_DIR}/Alloc.c"
+        "${RECOMP_LZMA_SDK_DIR}/Bcj2.c"
+        "${RECOMP_LZMA_SDK_DIR}/Bra.c"
+        "${RECOMP_LZMA_SDK_DIR}/Bra86.c"
+        "${RECOMP_LZMA_SDK_DIR}/BraIA64.c"
+        "${RECOMP_LZMA_SDK_DIR}/CpuArch.c"
+        "${RECOMP_LZMA_SDK_DIR}/Delta.c"
+        "${RECOMP_LZMA_SDK_DIR}/Lzma2Dec.c"
+        "${RECOMP_LZMA_SDK_DIR}/LzmaDec.c"
+        "${RECOMP_LZMA_SDK_DIR}/Ppmd7.c"
+        "${RECOMP_LZMA_SDK_DIR}/Ppmd7Dec.c"
+        "${RECOMP_LZMA_SDK_DIR}/Sha256.c"
+        "${RECOMP_LZMA_SDK_DIR}/Sha256Opt.c"
+        "${RECOMP_LZMA_SDK_DIR}/Xz.c"
+        "${RECOMP_LZMA_SDK_DIR}/XzCrc64.c"
+        "${RECOMP_LZMA_SDK_DIR}/XzCrc64Opt.c"
+        "${RECOMP_LZMA_SDK_DIR}/XzDec.c"
+    )
+    target_compile_definitions(recomp_lzma_sdk PUBLIC Z7_ST Z7_PPMD_SUPPORT)
+    target_include_directories(recomp_lzma_sdk PUBLIC "${RECOMP_LZMA_SDK_DIR}")
+    target_sources(librecomp PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/rom_archive.cpp")
+    target_compile_definitions(librecomp PRIVATE RECOMP_ROM_ARCHIVES=1)
+    target_link_libraries(librecomp PRIVATE recomp_lzma_sdk)
+endif()
