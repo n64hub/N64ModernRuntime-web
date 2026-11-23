@@ -62,17 +62,8 @@ if (WIN32)
 endif()
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/../thirdparty/miniz ${CMAKE_CURRENT_BINARY_DIR}/miniz)
-add_subdirectory(${PROJECT_SOURCE_DIR}/../N64Recomp ${CMAKE_CURRENT_BINARY_DIR}/N64Recomp EXCLUDE_FROM_ALL)
 
-# WebAssembly can't generate code at runtime, so Emscripten builds have no live recompiler (mods that need it don't load).
-if (EMSCRIPTEN)
-    target_link_libraries(librecomp PRIVATE ultramodern N64Recomp)
-else()
-    target_link_libraries(librecomp PRIVATE ultramodern N64Recomp LiveRecomp)
-endif()
-target_link_libraries(librecomp PUBLIC miniz)
-
-# Load ROM (select_rom) takes the ROM inside a .zip, .7z, .gz, .xz or .tar (src/rom_archive.cpp), with the LZMA SDK's
+# Load ROM (select_rom) takes the ROM inside a .zip, .7z, .gz, .xz or .tar (src/rom_archive*.cpp), with the LZMA SDK's
 # 7z and xz decoders (thirdparty/lzma-sdk).
 option(RECOMP_ROM_ARCHIVES "Load ROM takes a ROM inside a .zip, .7z, .gz, .xz or .tar (always on with Emscripten)" OFF)
 if (RECOMP_ROM_ARCHIVES OR EMSCRIPTEN)
@@ -104,7 +95,20 @@ if (RECOMP_ROM_ARCHIVES OR EMSCRIPTEN)
     )
     target_compile_definitions(recomp_lzma_sdk PUBLIC Z7_ST Z7_PPMD_SUPPORT)
     target_include_directories(recomp_lzma_sdk PUBLIC "${RECOMP_LZMA_SDK_DIR}")
-    target_sources(librecomp PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/rom_archive.cpp")
+    target_sources(librecomp PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/rom_archive.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/rom_archive_select.cpp"
+    )
     target_compile_definitions(librecomp PRIVATE RECOMP_ROM_ARCHIVES=1)
     target_link_libraries(librecomp PRIVATE recomp_lzma_sdk)
 endif()
+
+add_subdirectory(${PROJECT_SOURCE_DIR}/../N64Recomp ${CMAKE_CURRENT_BINARY_DIR}/N64Recomp EXCLUDE_FROM_ALL)
+
+# WebAssembly can't generate code at runtime, so Emscripten builds have no live recompiler (mods that need it don't load).
+if (EMSCRIPTEN)
+    target_link_libraries(librecomp PRIVATE ultramodern N64Recomp)
+else()
+    target_link_libraries(librecomp PRIVATE ultramodern N64Recomp LiveRecomp)
+endif()
+target_link_libraries(librecomp PUBLIC miniz)

@@ -284,27 +284,39 @@ void scan_tar(std::span<const uint8_t> data, const FoundFunc& found, bool& stop)
     }
 }
 
+enum class Kind { None, Zip, SevenZip, Gzip, Xz, Tar };
+
+// What data is, by its first bytes (a .tar's 512). A .gz or .xz is one only outside another (depth 0).
+Kind kind_of(std::span<const uint8_t> data, int depth) {
+    if (starts_with(data, { 'P', 'K', 3, 4 }) || starts_with(data, { 'P', 'K', 5, 6 })) {
+        return Kind::Zip;
+    }
+    if (starts_with(data, { '7', 'z', 0xBC, 0xAF, 0x27, 0x1C })) {
+        return Kind::SevenZip;
+    }
+    if (depth == 0 && starts_with(data, { 0x1F, 0x8B })) {
+        return Kind::Gzip;
+    }
+    if (depth == 0 && starts_with(data, { 0xFD, '7', 'z', 'X', 'Z', 0 })) {
+        return Kind::Xz;
+    }
+    if (data.size() >= 512 && std::memcmp(data.data() + 257, "ustar", 5) == 0) {
+        return Kind::Tar;
+    }
+    return Kind::None;
+}
+
 // Whether data is an archive (and so was searched).
 bool scan(std::span<const uint8_t> data, int depth, const FoundFunc& found, bool& stop) {
-    if (starts_with(data, { 'P', 'K', 3, 4 }) || starts_with(data, { 'P', 'K', 5, 6 })) {
-        scan_zip(data, found, stop);
+    switch (kind_of(data, depth)) {
+        case Kind::Zip: scan_zip(data, found, stop); return true;
+        case Kind::SevenZip: scan_7z(data, found, stop); return true;
+        case Kind::Gzip: scan_gzip(data, depth, found, stop); return true;
+        case Kind::Xz: scan_xz(data, depth, found, stop); return true;
+        case Kind::Tar: scan_tar(data, found, stop); return true;
+        case Kind::None: break;
     }
-    else if (starts_with(data, { '7', 'z', 0xBC, 0xAF, 0x27, 0x1C })) {
-        scan_7z(data, found, stop);
-    }
-    else if (depth == 0 && starts_with(data, { 0x1F, 0x8B })) {
-        scan_gzip(data, depth, found, stop);
-    }
-    else if (depth == 0 && starts_with(data, { 0xFD, '7', 'z', 'X', 'Z', 0 })) {
-        scan_xz(data, depth, found, stop);
-    }
-    else if (data.size() >= 512 && std::memcmp(data.data() + 257, "ustar", 5) == 0) {
-        scan_tar(data, found, stop);
-    }
-    else {
-        return false;
-    }
-    return true;
+    return false;
 }
 
 } // namespace
@@ -312,4 +324,8 @@ bool scan(std::span<const uint8_t> data, int depth, const FoundFunc& found, bool
 bool recomp::for_each_rom_in_archive(std::span<const uint8_t> data, const FoundFunc& found) {
     bool stop = false;
     return scan(data, 0, found, stop);
+}
+
+bool recomp::is_rom_archive(std::span<const uint8_t> start) {
+    return kind_of(start, 0) != Kind::None;
 }

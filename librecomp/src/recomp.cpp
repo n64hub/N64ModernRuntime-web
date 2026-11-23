@@ -28,8 +28,6 @@
 #include "rom_archive.hpp"
 #endif
 
-static recomp::RomValidationError check_rom(std::vector<uint8_t>& rom_data, const recomp::GameEntry& game_entry);
-
 #ifdef _WIN32
 #    define WIN32_LEAN_AND_MEAN
 #    include <Windows.h>
@@ -429,6 +427,13 @@ recomp::RomValidationError recomp::select_rom(const std::filesystem::path& rom_p
         return recomp::RomValidationError::OtherError;
     }
 
+#ifdef RECOMP_ROM_ARCHIVES
+    // An archive: the ROM inside it (rom_archive_select.cpp).
+    if (std::optional<recomp::RomValidationError> archive_result = recomp::select_rom_in_archive(rom_path, game_id)) {
+        return *archive_result;
+    }
+#endif
+
     const recomp::GameEntry& game_entry = find_it->second;
 
     std::vector<uint8_t> rom_data = read_file(rom_path);
@@ -437,47 +442,6 @@ recomp::RomValidationError recomp::select_rom(const std::filesystem::path& rom_p
         return recomp::RomValidationError::FailedToOpen;
     }
 
-#ifdef RECOMP_ROM_ARCHIVES
-    // An archive (rom_archive.hpp): the first ROM in it that is this game's is stored. With none, what the closest one
-    // was (the game in another version before another game before no ROM at all), so an archive of the wrong version
-    // says so.
-    recomp::RomValidationError archive_result = recomp::RomValidationError::NotARom;
-    auto closeness = [](recomp::RomValidationError error) {
-        switch (error) {
-            case recomp::RomValidationError::IncorrectVersion: return 3;
-            case recomp::RomValidationError::NotYet: return 2;
-            case recomp::RomValidationError::IncorrectRom: return 1;
-            default: return 0;
-        }
-    };
-    if (recomp::for_each_rom_in_archive(rom_data, [&](std::vector<uint8_t>&& rom) {
-            recomp::RomValidationError result = check_rom(rom, game_entry);
-            if (result == recomp::RomValidationError::Good) {
-                write_file(config_path / game_entry.stored_filename(), rom);
-                archive_result = result;
-                return true;
-            }
-            if (closeness(result) > closeness(archive_result)) {
-                archive_result = result;
-            }
-            return false;
-        })) {
-        return archive_result;
-    }
-#endif
-
-    recomp::RomValidationError result = check_rom(rom_data, game_entry);
-    if (result != recomp::RomValidationError::Good) {
-        return result;
-    }
-
-    write_file(config_path / game_entry.stored_filename(), rom_data);
-    
-    return recomp::RomValidationError::Good;
-}
-
-// Whether rom_data is game_entry's ROM, put in big-endian byte order if it is.
-static recomp::RomValidationError check_rom(std::vector<uint8_t>& rom_data, const recomp::GameEntry& game_entry) {
     // Pad the rom to the nearest multiple of 4 bytes.
     rom_data.resize((rom_data.size() + 3) & ~3);
 
@@ -511,6 +475,8 @@ static recomp::RomValidationError check_rom(std::vector<uint8_t>& rom_data, cons
         }
     }
 
+    write_file(config_path / game_entry.stored_filename(), rom_data);
+    
     return recomp::RomValidationError::Good;
 }
 
