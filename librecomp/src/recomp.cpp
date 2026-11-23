@@ -28,6 +28,8 @@
 #include "rom_archive.hpp"
 #endif
 
+static recomp::RomValidationError check_rom(std::vector<uint8_t>& rom_data, const recomp::GameEntry& game_entry);
+
 #ifdef _WIN32
 #    define WIN32_LEAN_AND_MEAN
 #    include <Windows.h>
@@ -420,44 +422,6 @@ void byteswap_data(std::vector<uint8_t>& rom_data, size_t index_xor) {
     }
 }
 
-// Whether rom_data is game_entry's ROM, put in big-endian byte order if it is.
-static recomp::RomValidationError check_rom(std::vector<uint8_t>& rom_data, const recomp::GameEntry& game_entry) {
-    // Pad the rom to the nearest multiple of 4 bytes.
-    rom_data.resize((rom_data.size() + 3) & ~3);
-
-    ByteswapType byteswap_type = check_rom_start(rom_data);
-
-    switch (byteswap_type) {
-        case ByteswapType::Invalid:
-            return recomp::RomValidationError::NotARom;
-        case ByteswapType::Byteswapped2:
-            byteswap_data(rom_data, 1);
-            break;
-        case ByteswapType::Byteswapped4:
-            byteswap_data(rom_data, 3);
-            break;
-        case ByteswapType::NotByteswapped:
-            break;
-    }
-
-    if (!check_hash(rom_data, game_entry.rom_hash)) {
-        const std::string_view name{ reinterpret_cast<const char*>(rom_data.data()) + 0x20, game_entry.internal_name.size()};
-        if (name == game_entry.internal_name) {
-            return recomp::RomValidationError::IncorrectVersion;
-        }
-        else {
-            if (game_entry.is_enabled && std::string_view{ reinterpret_cast<const char*>(rom_data.data()) + 0x20, 19 } == game_entry.internal_name) {
-                return recomp::RomValidationError::NotYet;
-            }
-            else {
-                return recomp::RomValidationError::IncorrectRom;
-            }
-        }
-    }
-
-    return recomp::RomValidationError::Good;
-}
-
 recomp::RomValidationError recomp::select_rom(const std::filesystem::path& rom_path, const std::u8string& game_id) {
     auto find_it = game_roms.find(game_id);
 
@@ -509,6 +473,44 @@ recomp::RomValidationError recomp::select_rom(const std::filesystem::path& rom_p
 
     write_file(config_path / game_entry.stored_filename(), rom_data);
     
+    return recomp::RomValidationError::Good;
+}
+
+// Whether rom_data is game_entry's ROM, put in big-endian byte order if it is.
+static recomp::RomValidationError check_rom(std::vector<uint8_t>& rom_data, const recomp::GameEntry& game_entry) {
+    // Pad the rom to the nearest multiple of 4 bytes.
+    rom_data.resize((rom_data.size() + 3) & ~3);
+
+    ByteswapType byteswap_type = check_rom_start(rom_data);
+
+    switch (byteswap_type) {
+        case ByteswapType::Invalid:
+            return recomp::RomValidationError::NotARom;
+        case ByteswapType::Byteswapped2:
+            byteswap_data(rom_data, 1);
+            break;
+        case ByteswapType::Byteswapped4:
+            byteswap_data(rom_data, 3);
+            break;
+        case ByteswapType::NotByteswapped:
+            break;
+    }
+
+    if (!check_hash(rom_data, game_entry.rom_hash)) {
+        const std::string_view name{ reinterpret_cast<const char*>(rom_data.data()) + 0x20, game_entry.internal_name.size()};
+        if (name == game_entry.internal_name) {
+            return recomp::RomValidationError::IncorrectVersion;
+        }
+        else {
+            if (game_entry.is_enabled && std::string_view{ reinterpret_cast<const char*>(rom_data.data()) + 0x20, 19 } == game_entry.internal_name) {
+                return recomp::RomValidationError::NotYet;
+            }
+            else {
+                return recomp::RomValidationError::IncorrectRom;
+            }
+        }
+    }
+
     return recomp::RomValidationError::Good;
 }
 
